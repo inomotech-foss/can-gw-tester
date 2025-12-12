@@ -1,0 +1,69 @@
+[project]
+name = "wp4"
+version = "0.1.0"
+description = "WP4: Impact analysis of gateway and charge control functionality"
+readme = "README.md"
+authors = [
+    { name = "MurselKhan", email = "mursel.khan@b-on.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "python-can>=4.4.0",
+    "pyroute2>=0.7.12",
+    "click>=8.1.0",
+    "PySide6>=6.8.0",
+    "qasync>=0.28.0",
+    "platformdirs>=4.5.1",
+]
+
+[project.scripts]
+can-gateway = "wp4.cli:main"
+can-gateway-gui = "wp4.gui:main"
+
+[build-system]
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.407",
+    "pytest>=9.0.2",
+    "pytest-mock>=3.15.1",
+    "pytest-qt>=4.4.0",
+    "ruff>=0.14.8",
+]
+docs = [
+    "sphinx>=9.0.4",
+    "sphinxcontrib-plantuml>=0.31",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# Enable pycodestyle (E), Pyflakes (F), isort (I), and pyupgrade (UP)
+select = ["E", "F", "I", "UP", "W", "B", "C4", "SIM"]
+ignore = []
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/__pycache__", "build", "dist", ".venv"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+qt_api = "pyside6"
