@@ -24,7 +24,7 @@
 			"version": "latest"
 		},
 		"ghcr.io/devcontainers-extra/features/curl-apt-get:1": {},
-		"ghcr.io/devcontainers-extra/features/ruff:1": {
+		"ghcr.io/devcontainers-extra/features/ruff:2": {
 			"version": "latest"
 		},
 		"ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv:1": {
