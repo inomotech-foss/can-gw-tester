@@ -441,3 +441,274 @@ class TestPacketLoss:
                 received += 1
 
             assert received >= 5
+
+
+class TestGatewayLoggerIntegration:
+    """Integration tests for Gateway + Logger config synchronization."""
+
+    def test_gateway_syncs_config_on_init(self, tmp_path):
+        """Test logger receives config when provided in constructor."""
+        from wp4.core.gateway_logger import GatewayLogger
+
+        logger = GatewayLogger(tmp_path / "logs")
+
+        BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=100,
+            jitter_ms=25.0,
+            loss_pct=5.0,
+            logger=logger,
+        )
+
+        # Logger should have received config
+        assert logger._config.delay_ms == 100
+        assert logger._config.jitter_ms == 25.0
+        assert logger._config.loss_pct == 5.0
+
+    def test_gateway_syncs_config_on_change(self, tmp_path):
+        """Test config changes are synced to logger."""
+        from wp4.core.gateway_logger import GatewayLogger
+
+        logger = GatewayLogger(tmp_path / "logs")
+
+        gw = BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=0,
+            jitter_ms=0.0,
+            loss_pct=0.0,
+            logger=logger,
+        )
+
+        # Initial config
+        assert logger._config.delay_ms == 0
+        assert logger._config.jitter_ms == 0.0
+        assert logger._config.loss_pct == 0.0
+
+        # Change delay
+        gw.delay_ms = 50
+        assert logger._config.delay_ms == 50
+
+        # Change jitter
+        gw.jitter_ms = 15.0
+        assert logger._config.jitter_ms == 15.0
+
+        # Change loss
+        gw.loss_pct = 10.0
+        assert logger._config.loss_pct == 10.0
+
+    def test_gateway_syncs_config_on_set_logger(self, tmp_path):
+        """Test set_logger syncs current config to new logger."""
+        from wp4.core.gateway_logger import GatewayLogger
+
+        gw = BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=75,
+            jitter_ms=20.0,
+            loss_pct=8.0,
+        )
+
+        # No logger initially
+        logger = GatewayLogger(tmp_path / "logs")
+
+        # Set logger - should sync config
+        gw.set_logger(logger)
+
+        assert logger._config.delay_ms == 75
+        assert logger._config.jitter_ms == 20.0
+        assert logger._config.loss_pct == 8.0
+
+    def test_gateway_logger_none_does_not_crash(self):
+        """Test config changes don't crash when no logger is set."""
+        gw = BidirectionalGateway("vcan0", "vcan1")
+
+        # These should not raise even without a logger
+        gw.delay_ms = 100
+        gw.jitter_ms = 10.0
+        gw.loss_pct = 5.0
+        gw.set_logger(None)
+
+
+class TestEndToEndLogging:
+    """End-to-end tests for full logging flow with real CAN traffic."""
+
+    def test_full_logging_flow(self, tmp_path):
+        """Test complete flow: Gateway + Logger + real messages → CSV."""
+        import csv
+
+        from wp4.core.gateway_logger import GatewayLogger
+
+        log_dir = tmp_path / "logs"
+        logger = GatewayLogger(log_dir)
+        logger.start("vcan0", "vcan1")
+
+        gw = BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=10,
+            jitter_ms=5.0,
+            loss_pct=0.0,
+            logger=logger,
+        )
+        gw.start()
+        time.sleep(0.1)
+
+        try:
+            with (
+                can.Bus(channel="vcan0", interface="socketcan") as send_bus,
+                can.Bus(channel="vcan1", interface="socketcan") as recv_bus,
+            ):
+                # Send test messages
+                for i in range(3):
+                    msg = can.Message(
+                        arbitration_id=0x100 + i,
+                        data=bytes([i, i + 1]),
+                        is_extended_id=False,
+                    )
+                    send_bus.send(msg)
+                    time.sleep(0.05)
+
+                # Wait for messages to be forwarded
+                time.sleep(0.3)
+
+                # Receive messages (drain queue)
+                while recv_bus.recv(timeout=0.1):
+                    pass
+
+        finally:
+            gw.stop()
+            logger.stop()
+
+        # Verify CSV content
+        csv_path = logger.get_csv_path()
+        assert csv_path is not None
+        assert csv_path.exists()
+
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Should have logged forwarded messages
+        assert len(rows) >= 3
+
+        for row in rows:
+            assert row["event"] == "forwarded"
+            assert row["direction"] == "0to1"
+            assert row["delay_ms"] == "10.0"
+            assert row["jitter_ms"] == "5.0"
+            assert row["loss_pct"] == "0.0"
+            assert row["latency_us"] != ""  # Should have latency
+
+    def test_dropped_messages_in_csv(self, tmp_path):
+        """Test dropped messages (100% loss) appear in CSV."""
+        import csv
+
+        from wp4.core.gateway_logger import GatewayLogger
+
+        log_dir = tmp_path / "logs"
+        logger = GatewayLogger(log_dir)
+        logger.start("vcan0", "vcan1")
+
+        gw = BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=0,
+            jitter_ms=0.0,
+            loss_pct=100.0,  # Drop all messages
+            logger=logger,
+        )
+        gw.start()
+        time.sleep(0.1)
+
+        try:
+            with can.Bus(channel="vcan0", interface="socketcan") as send_bus:
+                # Send messages that will be dropped
+                for i in range(5):
+                    msg = can.Message(
+                        arbitration_id=0x200 + i,
+                        data=bytes([i]),
+                        is_extended_id=False,
+                    )
+                    send_bus.send(msg)
+
+                time.sleep(0.2)
+
+        finally:
+            gw.stop()
+            logger.stop()
+
+        # Verify CSV shows dropped events
+        csv_path = logger.get_csv_path()
+        assert csv_path is not None
+
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Should have dropped events
+        dropped_rows = [r for r in rows if r["event"] == "dropped"]
+        assert len(dropped_rows) >= 5
+
+        for row in dropped_rows:
+            assert row["tx_ts"] == ""  # No TX timestamp for dropped
+            assert row["latency_us"] == ""  # No latency for dropped
+            assert row["loss_pct"] == "100.0"
+
+    def test_mixed_forwarded_and_dropped(self, tmp_path):
+        """Test mix of forwarded and dropped messages with 50% loss."""
+        import csv
+
+        from wp4.core.gateway_logger import GatewayLogger
+
+        log_dir = tmp_path / "logs"
+        logger = GatewayLogger(log_dir)
+        logger.start("vcan0", "vcan1")
+
+        gw = BidirectionalGateway(
+            "vcan0",
+            "vcan1",
+            delay_ms=0,
+            jitter_ms=0.0,
+            loss_pct=50.0,  # 50% drop rate
+            logger=logger,
+        )
+        gw.start()
+        time.sleep(0.1)
+
+        try:
+            with can.Bus(channel="vcan0", interface="socketcan") as send_bus:
+                # Send many messages
+                for i in range(20):
+                    msg = can.Message(
+                        arbitration_id=0x300 + i,
+                        data=bytes([i]),
+                        is_extended_id=False,
+                    )
+                    send_bus.send(msg)
+                    time.sleep(0.01)
+
+                time.sleep(0.3)
+
+        finally:
+            gw.stop()
+            logger.stop()
+
+        csv_path = logger.get_csv_path()
+        assert csv_path is not None
+        with csv_path.open() as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        forwarded = [r for r in rows if r["event"] == "forwarded"]
+        dropped = [r for r in rows if r["event"] == "dropped"]
+
+        # With 50% loss, expect roughly half forwarded, half dropped
+        # Allow for statistical variation
+        total = len(forwarded) + len(dropped)
+        assert total >= 20  # All messages should be logged
+
+        # Both event types should appear
+        assert len(forwarded) > 0
+        assert len(dropped) > 0

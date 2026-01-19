@@ -74,6 +74,14 @@ class BidirectionalGateway:
         self._direction_lock = threading.Lock()  # Protects enabled flag
         self._latency_lock = threading.Lock()  # Protects latency samples
 
+        # Sync logger config if logger was provided
+        if self._logger:
+            self._logger.set_gateway_config(
+                delay_ms=self._delay_ms,
+                jitter_ms=self._jitter_ms,
+                loss_pct=self._loss_pct,
+            )
+
     @property
     def delay_ms(self) -> int:
         return self._delay_ms
@@ -81,6 +89,7 @@ class BidirectionalGateway:
     @delay_ms.setter
     def delay_ms(self, value: int):
         self._delay_ms = value
+        self._sync_logger_config()
 
     @property
     def loss_pct(self) -> float:
@@ -89,6 +98,7 @@ class BidirectionalGateway:
     @loss_pct.setter
     def loss_pct(self, value: float):
         self._loss_pct = value
+        self._sync_logger_config()
 
     @property
     def jitter_ms(self) -> float:
@@ -97,6 +107,16 @@ class BidirectionalGateway:
     @jitter_ms.setter
     def jitter_ms(self, value: float):
         self._jitter_ms = max(0.0, value)
+        self._sync_logger_config()
+
+    def _sync_logger_config(self) -> None:
+        """Sync current gateway config to logger for CSV output."""
+        if self._logger:
+            self._logger.set_gateway_config(
+                delay_ms=self._delay_ms,
+                jitter_ms=self._jitter_ms,
+                loss_pct=self._loss_pct,
+            )
 
     def set_logger(self, logger: "GatewayLogger | None") -> None:
         """Set or remove the logger dynamically.
@@ -107,6 +127,7 @@ class BidirectionalGateway:
             logger: GatewayLogger instance, or None to disable logging
         """
         self._logger = logger
+        self._sync_logger_config()
 
     @property
     def is_running(self) -> bool:
