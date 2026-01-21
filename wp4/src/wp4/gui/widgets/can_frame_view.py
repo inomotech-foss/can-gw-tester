@@ -9,7 +9,6 @@ Uses a background thread for parsing to avoid blocking the GUI.
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from platformdirs import user_log_dir
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
@@ -29,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from wp4.gui.config import get_default_config
 from wp4.services.gateway_service import GatewayService
 
 
@@ -320,7 +320,7 @@ class CanFrameViewWidget(QWidget):
     def _browse_blf(self) -> None:
         """Browse for BLF file."""
         # Use same default path as logging section
-        default_path = str(Path(user_log_dir("wp4", ensure_exists=True)))
+        default_path = str(get_default_config().logging.default_path)
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Select BLF Log File",

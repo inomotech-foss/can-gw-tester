@@ -10,7 +10,13 @@ Provides a single place to configure:
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from platformdirs import user_log_dir
+
+def _get_project_logs_path() -> Path:
+    """Get the project logs directory path, creating it if needed."""
+    # Path relative to this file: wp4/src/wp4/gui/config.py -> wp4/logs
+    logs_path = Path(__file__).parent.parent.parent.parent / "logs"
+    logs_path.mkdir(parents=True, exist_ok=True)
+    return logs_path
 
 
 @dataclass
@@ -80,9 +86,7 @@ class LoggingConfig:
         filename_format: Format string for auto-generated filenames
     """
 
-    default_path: Path = field(
-        default_factory=lambda: Path(user_log_dir("wp4", ensure_exists=True))
-    )
+    default_path: Path = field(default_factory=lambda: _get_project_logs_path())
     auto_enable: bool = False
     filename_format: str = "gateway_{timestamp}.blf"
 

@@ -226,12 +226,12 @@ class TestTrafficControlWidgetCleanup:
 class TestTrafficControlWidgetLogging:
     """Tests for logging controls."""
 
-    def test_logging_checkbox_exists(self, qtbot):
-        """Test logging enabled checkbox exists."""
+    def test_logging_button_exists(self, qtbot):
+        """Test logging start/stop button exists."""
         widget = TrafficControlWidget(iface0="vcan0", iface1="vcan1")
         qtbot.addWidget(widget)
 
-        assert widget._log_enabled is not None
+        assert widget._log_btn is not None
 
     def test_logging_path_edit_exists(self, qtbot):
         """Test logging path edit exists."""

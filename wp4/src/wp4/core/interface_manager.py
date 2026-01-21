@@ -1,5 +1,7 @@
 """Interface manager - wraps CAN interface operations with event publishing."""
 
+import contextlib
+
 from wp4.core.events import EventBus, EventType
 from wp4.core.gateway_manager import GatewayConfig
 from wp4.lib.canif import (
@@ -28,30 +30,58 @@ class InterfaceManager:
         self._event_bus = event_bus
         self._bitrate = 500000  # Default bitrate
 
+    def bring_up_interface(self, iface: str) -> None:
+        """Bring up a single interface with configured bitrate.
+
+        Args:
+            iface: Interface name to bring up
+
+        Publishes INTERFACE_STATE_CHANGED event.
+        """
+        try:
+            set_interface_up(iface, self._bitrate)
+            state = get_interface_state(iface)
+            self._event_bus.publish(
+                EventType.INTERFACE_STATE_CHANGED,
+                {"interface": iface, "state": state},
+            )
+        except Exception as e:
+            self._event_bus.publish(
+                EventType.INTERFACE_STATE_CHANGED,
+                {"interface": iface, "state": None, "error": str(e)},
+            )
+            raise
+
     def bring_up_interfaces(self) -> None:
         """Bring up both interfaces with configured bitrate.
 
         Publishes INTERFACE_STATE_CHANGED events for each interface.
         """
-        # Bring up both interfaces
         for iface in [self._config.iface0, self._config.iface1]:
-            try:
-                set_interface_up(iface, self._bitrate)
-                state = get_interface_state(iface)
-                self._event_bus.publish(
-                    EventType.INTERFACE_STATE_CHANGED,
-                    {"interface": iface, "state": state},
-                )
-            except Exception as e:
-                # Publish error state
-                self._event_bus.publish(
-                    EventType.INTERFACE_STATE_CHANGED,
-                    {
-                        "interface": iface,
-                        "state": None,
-                        "error": str(e),
-                    },
-                )
+            with contextlib.suppress(Exception):
+                self.bring_up_interface(iface)
+
+    def bring_down_interface(self, iface: str) -> None:
+        """Bring down a single interface.
+
+        Args:
+            iface: Interface name to bring down
+
+        Publishes INTERFACE_STATE_CHANGED event.
+        """
+        try:
+            set_interface_down(iface)
+            state = get_interface_state(iface)
+            self._event_bus.publish(
+                EventType.INTERFACE_STATE_CHANGED,
+                {"interface": iface, "state": state},
+            )
+        except Exception as e:
+            self._event_bus.publish(
+                EventType.INTERFACE_STATE_CHANGED,
+                {"interface": iface, "state": None, "error": str(e)},
+            )
+            raise
 
     def bring_down_interfaces(self) -> None:
         """Bring down both interfaces.
@@ -59,23 +89,8 @@ class InterfaceManager:
         Publishes INTERFACE_STATE_CHANGED events for each interface.
         """
         for iface in [self._config.iface0, self._config.iface1]:
-            try:
-                set_interface_down(iface)
-                state = get_interface_state(iface)
-                self._event_bus.publish(
-                    EventType.INTERFACE_STATE_CHANGED,
-                    {"interface": iface, "state": state},
-                )
-            except Exception as e:
-                # Publish error state
-                self._event_bus.publish(
-                    EventType.INTERFACE_STATE_CHANGED,
-                    {
-                        "interface": iface,
-                        "state": None,
-                        "error": str(e),
-                    },
-                )
+            with contextlib.suppress(Exception):
+                self.bring_down_interface(iface)
 
     def get_state(self, iface: str) -> CanInterfaceState | None:
         """Get current state of an interface.

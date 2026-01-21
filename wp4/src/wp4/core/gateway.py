@@ -361,6 +361,7 @@ class BidirectionalGateway:
 
                 # Schedule for delayed sending with optional jitter
                 base_delay = self._delay_ms / 1000.0
+                # Jitter: symmetric random delay between -jitter_ms and +jitter_ms
                 jitter = (
                     random.uniform(-self._jitter_ms, self._jitter_ms) / 1000.0
                     if self._jitter_ms > 0
@@ -368,8 +369,7 @@ class BidirectionalGateway:
                 )
                 # Include extra delay from manipulation rules
                 rule_delay = extra_delay / 1000.0
-                # Ensure send_time is never before recv_time
-                send_time = max(recv_time + base_delay + jitter + rule_delay, recv_time)
+                send_time = recv_time + base_delay + jitter + rule_delay
 
                 with stats.condition:
                     # Drop oldest if queue is too large

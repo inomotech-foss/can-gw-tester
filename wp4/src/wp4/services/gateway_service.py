@@ -115,9 +115,25 @@ class GatewayService:
         """
         self._gateway_manager.set_direction_enabled(direction, enabled)
 
+    def bring_up_interface(self, iface: str) -> None:
+        """Bring up a single CAN interface.
+
+        Args:
+            iface: Interface name to bring up
+        """
+        self._interface_manager.bring_up_interface(iface)
+
     def bring_up_interfaces(self) -> None:
         """Bring up both CAN interfaces."""
         self._interface_manager.bring_up_interfaces()
+
+    def bring_down_interface(self, iface: str) -> None:
+        """Bring down a single CAN interface.
+
+        Args:
+            iface: Interface name to bring down
+        """
+        self._interface_manager.bring_down_interface(iface)
 
     def bring_down_interfaces(self) -> None:
         """Bring down both CAN interfaces."""

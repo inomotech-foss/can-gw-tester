@@ -9,7 +9,6 @@ Provides UI controls for:
 
 from pathlib import Path
 
-from platformdirs import user_log_dir
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -29,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from wp4.core.gateway_manager import GatewayConfig
 from wp4.gui.adapters.qt_events import QtEventAdapter
+from wp4.gui.config import get_default_config
 from wp4.lib import is_virtual_can
 from wp4.services.gateway_service import GatewayService
 
@@ -219,6 +219,11 @@ class TrafficControlWidget(QWidget):
         self._jitter_spin.setSingleStep(1.0)
         self._jitter_spin.setDecimals(1)
         self._jitter_spin.setSuffix(" ms")
+        self._jitter_spin.setToolTip(
+            "Symmetric jitter: delay ± jitter\n"
+            "Example: delay=50ms, jitter=10ms → 40-60ms\n"
+            "Note: Delay is auto-adjusted to match jitter if needed."
+        )
         self._jitter_spin.valueChanged.connect(self._update_settings)
         tc_layout.addWidget(self._jitter_spin, 2, 1)
 
@@ -228,14 +233,16 @@ class TrafficControlWidget(QWidget):
         log_group = QGroupBox("Logging")
         log_layout = QGridLayout(log_group)
 
-        self._log_enabled = QCheckBox("Enable Logging")
-        self._log_enabled.stateChanged.connect(self._toggle_logging)
-        log_layout.addWidget(self._log_enabled, 0, 0, 1, 3)
+        self._log_btn = QPushButton("Start Logging")
+        self._log_btn.setCheckable(True)
+        self._log_btn.clicked.connect(self._toggle_logging)
+        log_layout.addWidget(self._log_btn, 0, 0, 1, 3)
+        self._logging_active = False
 
         log_layout.addWidget(QLabel("Log Path:"), 1, 0)
         self._log_path_edit = QLineEdit()
-        # Use OS-appropriate log directory (e.g., ~/.local/share/wp4 on Linux)
-        default_log_path = Path(user_log_dir("wp4", ensure_exists=True))
+        # Use project logs directory from central config
+        default_log_path = get_default_config().logging.default_path
         self._log_path_edit.setText(str(default_log_path))
         self._log_path_edit.setReadOnly(True)
         log_layout.addWidget(self._log_path_edit, 1, 1)
@@ -332,8 +339,8 @@ class TrafficControlWidget(QWidget):
         try:
             # Set bitrate first
             self._service.set_bitrate(self._bitrate)
-            # Bring up interface
-            self._service.bring_up_interfaces()  # Brings up both
+            # Bring up single interface
+            self._service.bring_up_interface(iface)
             self._refresh_interface_status()
         except PermissionError:
             QMessageBox.warning(
@@ -348,7 +355,7 @@ class TrafficControlWidget(QWidget):
     def _interface_down(self, iface: str):
         """Bring down a single interface."""
         try:
-            self._service.bring_down_interfaces()  # Brings down both
+            self._service.bring_down_interface(iface)
             self._refresh_interface_status()
         except PermissionError:
             QMessageBox.warning(
@@ -478,6 +485,13 @@ class TrafficControlWidget(QWidget):
         loss = self._loss_spin.value()
         jitter = self._jitter_spin.value()
 
+        # Ensure delay >= jitter for symmetric jitter (delay ± jitter)
+        if jitter > delay:
+            delay = int(jitter)
+            self._delay_spin.blockSignals(True)
+            self._delay_spin.setValue(delay)
+            self._delay_spin.blockSignals(False)
+
         # Validate extreme values and warn user
         self._check_extreme_values(delay, loss, jitter)
 
@@ -563,7 +577,7 @@ class TrafficControlWidget(QWidget):
         """Handle GATEWAY_STARTED event."""
         self._update_direction_status()
         # Update log files label if logging is enabled
-        if self._log_enabled.isChecked():
+        if self._logging_active:
             self._update_log_files_label()
 
     def _on_gateway_stopped(self):
@@ -598,16 +612,20 @@ class TrafficControlWidget(QWidget):
             self._stats_1to0.setText("--")
 
     # Logging controls
-    def _toggle_logging(self, state: int):
+    def _toggle_logging(self, checked: bool):
         """Toggle logging on/off."""
-        if state:
+        if checked:
             log_path = self._log_path_edit.text()
             log_name = self._log_name_edit.text().strip() or None
             self._service.set_log_path(log_path, custom_name=log_name)
             self._update_log_files_label()
+            self._log_btn.setText("Stop Logging")
+            self._logging_active = True
         else:
             self._service.set_log_path(None)
             self._log_files_label.setText("Active: --")
+            self._log_btn.setText("Start Logging")
+            self._logging_active = False
 
     def _browse_log_path(self):
         """Open file dialog to select log directory."""
@@ -621,7 +639,7 @@ class TrafficControlWidget(QWidget):
         if path:
             self._log_path_edit.setText(path)
             # Update service if logging is enabled
-            if self._log_enabled.isChecked():
+            if self._logging_active:
                 self._service.set_log_path(path)
                 self._update_log_files_label()
 

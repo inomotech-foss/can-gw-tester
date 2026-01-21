@@ -9,9 +9,7 @@ Provides UI controls for:
 
 from pathlib import Path
 
-from platformdirs import user_log_dir
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -23,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from wp4.gui.config import get_default_config
 from wp4.services.gateway_service import GatewayService
 
 
@@ -51,15 +50,17 @@ class LoggingControlWidget(QWidget):
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Enable checkbox
-        self._log_enabled = QCheckBox("Enable Logging")
-        self._log_enabled.stateChanged.connect(self._toggle_logging)
-        layout.addWidget(self._log_enabled, 0, 0, 1, 3)
+        # Start/Stop logging button
+        self._log_btn = QPushButton("Start Logging")
+        self._log_btn.setCheckable(True)
+        self._log_btn.clicked.connect(self._toggle_logging)
+        layout.addWidget(self._log_btn, 0, 0, 1, 3)
+        self._logging_active = False
 
         # Log path
         layout.addWidget(QLabel("Log Path:"), 1, 0)
         self._log_path_edit = QLineEdit()
-        default_log_path = Path(user_log_dir("wp4", ensure_exists=True))
+        default_log_path = get_default_config().logging.default_path
         self._log_path_edit.setText(str(default_log_path))
         self._log_path_edit.setReadOnly(True)
         layout.addWidget(self._log_path_edit, 1, 1)
@@ -110,17 +111,21 @@ class LoggingControlWidget(QWidget):
 
         layout.addLayout(export_row, 4, 0, 1, 3)
 
-    def _toggle_logging(self, state: int):
+    def _toggle_logging(self, checked: bool):
         """Toggle logging on/off."""
-        if state:
+        if checked:
             log_path = self._log_path_edit.text()
             log_name = self._log_name_edit.text().strip() or None
             self._service.set_log_path(log_path, custom_name=log_name)
             self._update_log_files_label()
+            self._log_btn.setText("Stop Logging")
+            self._logging_active = True
         else:
             self._service.set_log_path(None)
             self._log_files_label.setText("Active: --")
             self._export_btn.setEnabled(False)
+            self._log_btn.setText("Start Logging")
+            self._logging_active = False
 
     def _browse_log_path(self):
         """Open file dialog to select log directory."""
@@ -133,7 +138,7 @@ class LoggingControlWidget(QWidget):
         )
         if path:
             self._log_path_edit.setText(path)
-            if self._log_enabled.isChecked():
+            if self._logging_active:
                 self._service.set_log_path(path)
                 self._update_log_files_label()
 
@@ -194,14 +199,14 @@ class LoggingControlWidget(QWidget):
 
     def update_log_files_label(self):
         """Public method to update log files label (called when gateway starts)."""
-        if self._log_enabled.isChecked():
+        if self._logging_active:
             self._update_log_files_label()
 
     # Public API for testing
     @property
-    def log_enabled(self) -> QCheckBox:
-        """Get log enabled checkbox."""
-        return self._log_enabled
+    def log_btn(self) -> QPushButton:
+        """Get log start/stop button."""
+        return self._log_btn
 
     @property
     def log_path_edit(self) -> QLineEdit:
@@ -220,7 +225,7 @@ class LoggingControlWidget(QWidget):
 
     def is_logging_enabled(self) -> bool:
         """Check if logging is enabled."""
-        return self._log_enabled.isChecked()
+        return self._logging_active
 
 
 def create_logging_group(
